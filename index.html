@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador v1.5 — Trampa geométrica de curvatura acumulada</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--accent:#5ec8d8;--accent2:#e8985e;--text:#e7e9ee;--muted:#9aa1ac;--border:#262b35}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Helvetica Neue',Arial,sans-serif;padding:20px 14px 48px}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:19px;margin:0 0 4px;color:#fff}
+.sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:12px}
+canvas{width:100%;display:block;background:#0a0c10;border-radius:6px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+button{background:var(--accent);color:#0f1115;border:none;border-radius:6px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}
+button.s{background:transparent;border:1px solid var(--border);color:var(--muted)}
+button.s.on{border-color:var(--accent);color:var(--accent)}
+.ctl{flex:1 1 200px;font-size:12px;color:var(--muted)}
+.ctl b{color:var(--text)}
+select{background:#0d0f14;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;font-size:12.5px}
+input[type=range]{width:100%;accent-color:#5ec8d8}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+td,th{border:1px solid var(--border);padding:5px 6px;text-align:center;color:var(--muted)}
+th{color:var(--accent)}
+td.v{color:var(--text)}
+h2{font-size:15px;margin:2px 0 8px;color:#fff}
+details{border-top:1px solid var(--border);padding:8px 2px}
+details:first-of-type{border-top:none}
+summary{cursor:pointer;font-weight:700;font-size:13.5px;color:var(--accent);padding:4px 0}
+details p,details li{font-size:13px;line-height:1.6;color:#cfd3da;margin:6px 0}
+details ul{padding-left:20px;margin:6px 0}
+.eq{background:#0d0f14;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;padding:8px 12px;margin:8px 0;font-size:14px;overflow-x:auto;font-family:Georgia,serif;color:#e7e9ee;white-space:nowrap}
+.warn{background:rgba(193,124,143,.1);border:1px solid rgba(193,124,143,.4);border-radius:6px;padding:9px 12px;font-size:12.5px;color:#e3c3cc;margin:8px 0;line-height:1.55}
+.warn b{color:#e59ab0}
+.note{font-size:12.5px;color:#d9c3ab;background:rgba(232,152,94,.08);border:1px solid rgba(232,152,94,.3);border-radius:6px;padding:10px 12px;line-height:1.55}
+.note b{color:var(--accent2)}
+.big{font-size:14px;color:#fff;margin:4px 2px}
+.big b{color:var(--accent2)}
+.leg{font-size:11.5px;color:var(--muted);margin-top:4px}
+</style></head><body><div class="wrap">
+<h1>Trampa geométrica de curvatura acumulada — simulador v1.5</h1>
+<div class="sub">Mathias Zárate Amenero · desarrollado junto con Claude (Anthropic) · Lima, Perú. Una partícula cuántica obligada a moverse sobre un hilo curvo siente un pozo de potencial que depende solo de la curvatura. En una espiral cuya curvatura crece hacia el centro, ese pozo atrapa estados. Hipótesis teórica: no es una tecnología ni un dispositivo aplicable todavía.</div>
+
+<div class="panel">
+  <div class="big" id="head"></div>
+  <canvas id="cs" width="860" height="470" style="aspect-ratio:860/470"></canvas>
+  <div class="leg">Color = probabilidad |ψ|² del estado elegido a lo largo del hilo (más azul = más probable). El hilo entra recto por el exterior y termina en el centro de la espiral.</div>
+  <div class="row"><div class="ctl">Estado mostrado: <b id="kv">1</b> de <b id="Nv">0</b> ligados<input type="range" id="kst" min="0" max="0" value="0"></div></div>
+</div>
+
+<div class="panel">
+  <canvas id="cv" width="860" height="230" style="aspect-ratio:860/230"></canvas>
+  <div class="leg">Curva naranja: pozo geométrico V(s) = −κ(s)²/4 (en unidades ħ²/2mℓ²). Líneas azules: niveles de energía de los estados ligados (E &lt; 0). Se ve cómo el pozo se profundiza hacia el centro.</div>
+</div>
+
+<div class="panel" id="dynpanel">
+  <div class="big">Rampa de curvatura (animación) <span style="font-size:12px;color:var(--muted)">· experimento mental, cálculo numérico</span></div>
+  <canvas id="cd" width="860" height="400" style="aspect-ratio:860/400"></canvas>
+  <canvas id="cpop" width="860" height="190" style="aspect-ratio:860/190;margin-top:6px"></canvas>
+  <div class="leg" id="dleg">La curvatura sube de κ a λ·κ de forma lineal durante un tiempo τ y la espiral se aprieta. Arriba, la probabilidad |ψ|² de la partícula sobre el hilo; abajo, qué tanta probabilidad hay en el estado fundamental (azul), el primero excitado (naranja) y el segundo (gris) del hilo en ese instante. Si la rampa es lenta, el estado fundamental se mantiene; si es muy rápida, parte de la probabilidad queda atrás.</div>
+  <div class="row">
+    <div class="ctl">Tiempo de rampa τ: <b id="tauv">1.4</b> <span id="taups"></span><input type="range" id="tau" min="-1.7" max="0.78" step="0.01" value="0.15"></div>
+    <div class="ctl">Curvatura final λ: <b id="lfv">1.5</b>×<input type="range" id="lf" min="1.1" max="2" step="0.05" value="1.5"></div>
+  </div>
+  <div class="row">
+    <button class="s" id="dplay">▶ Reproducir</button>
+    <button class="s" id="dskip">⏭ Ir al final</button>
+    <button class="s" data-tau="-1.3">Muy rápida</button>
+    <button class="s" data-tau="0.15">Intermedia</button>
+    <button class="s" data-tau="0.7">Lenta</button>
+  </div>
+  <div class="note" id="dres"></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <button class="s on" data-prof="arq">Espiral de Arquímedes</button>
+    <button class="s" data-prof="1">κ ∝ s  (n=1, clotoide)</button>
+    <button class="s" data-prof="2">κ ∝ s²</button>
+    <button class="s" data-prof="3">κ ∝ s³</button>
+  </div>
+  <div class="row">
+    <div class="ctl">Curvatura acumulada, vueltas T = θ/2π: <b id="Tv">5.0</b><input type="range" id="T" min="0.5" max="9" step="0.25" value="5"></div>
+    <div class="ctl" id="pbox">Paso de la espiral p (en unidades de ℓ): <b id="pv">0.10</b><input type="range" id="P" min="0.06" max="0.3" step="0.01" value="0.1"></div>
+    <div class="ctl" id="cbox">Variación del paso c, p(u) = p·(1 + c·u), u = vueltas: <b id="cv2">0.00</b><input type="range" id="C" min="-0.15" max="0.5" step="0.05" value="0"></div>
+  </div>
+  <div class="row"><div class="ctl" style="flex:1 1 100%;color:#e8985e;font-size:12px">Efectos añadidos al modelo ideal (informe v1.7, secciones 5.8 y 5.9):</div></div>
+  <div class="row">
+    <div class="ctl">Rugosidad del ancho: σ<sub>V</sub> del potencial aleatorio (unid.): <b id="sgv">0.00</b><input type="range" id="sg" min="0" max="3" step="0.05" value="0"></div>
+    <div class="ctl">Longitud de correlación ξ (ℓ): <b id="xiv">0.10</b><input type="range" id="xi" min="0.03" max="0.5" step="0.01" value="0.1"></div>
+    <div class="ctl">Corrección geométrica tipo espín–órbita, V<sub>extra</sub> = −g·κ (solo sensibilidad; Ortix 2015 no da esta corrección para una espiral plana): <b id="gv">0.00</b><input type="range" id="gg" min="-1" max="1" step="0.05" value="0"></div>
+    <div class="ctl">Altura de la pared entre vueltas, V₀/E<sub>conf</sub>: <b id="wfv">20</b><input type="range" id="wf" min="1.2" max="100" step="0.1" value="20"></div>
+    <div class="ctl">Grosor de la pared entre vueltas / ancho del hilo: <b id="twv">4.0</b><input type="range" id="tw" min="0.3" max="8" step="0.1" value="4"></div>
+  </div>
+  <div class="row"><button class="s" id="newseed">Nueva realización del ruido</button><span class="leg" id="mcres" style="margin-left:8px"></span></div>
+  <div class="row">
+    <div class="ctl">Tamaño ℓ del radio exterior (nm): <b id="lv">10</b><input type="range" id="ell" min="1" max="50" step="1" value="10"></div>
+    <div class="ctl">Masa efectiva m*/mₑ: <b id="mv">0.067</b><input type="range" id="ms" min="0.01" max="1" step="0.001" value="0.067"></div>
+    <div class="ctl">Temperatura (K): <b id="Kv">4</b><input type="range" id="Tk" min="0.5" max="300" step="0.5" value="4"></div>
+  </div>
+  <div class="row"><button class="s" data-pre="0.067,10,4">GaAs, ℓ = 10 nm, 4 K</button><button class="s" data-pre="1,2,4">electrón libre, ℓ = 2 nm</button><button class="s" data-pre="0.067,50,300">GaAs, ℓ = 50 nm, 300 K</button></div>
+  <table><tbody id="tcal"></tbody></table>
+  <div class="warn" id="pnote"></div>
+</div>
+
+<div class="panel">
+  <canvas id="cn" width="860" height="260" style="aspect-ratio:860/260"></canvas>
+  <div class="leg">Número de estados ligados N contra la curvatura acumulada θ/2π (barrido para el perfil elegido, puntos azules); línea gris: N = θ/2π; punto naranja: tu configuración actual. La regla se cumple dentro de ±½ en todos los casos explorados.</div>
+</div>
+
+<div class="panel">
+<h2>Qué es esto y para qué sirve</h2>
+<details open><summary>¿Por qué existe este simulador?</summary>
+<p>La idea (tuya) es que la curvatura acumulada de un hilo podría atrapar partículas. La teoría de una partícula obligada a moverse sobre una curva ya dice que aparece un potencial geométrico que depende de la curvatura. Este simulador convierte esa frase en algo que se puede mover con los controles: eliges la forma, ves el pozo, ves los estados y cuántos hay.</p></details>
+<details><summary>¿Con qué fin?</summary><ul>
+<li><b>Ver el mecanismo:</b> más curvatura acumulada = pozo más profundo y ancho = más estados atrapados.</li>
+<li><b>Comprobar la regla N ≈ θ/2π</b> (un estado ligado por vuelta acumulada) para varios perfiles de curvatura.</li>
+<li><b>Traducir a unidades reales</b> (meV, kelvin) para saber si algo así sería observable.</li>
+<li><b>Mostrar honestamente los límites</b> de la hipótesis.</li></ul></details>
+<details><summary>Qué muestra y qué no</summary>
+<p><b>Sí muestra:</b> que, dadas las ecuaciones, la espiral atrapa estados y que su número sigue la curvatura acumulada; que la profundidad depende de κ² y no de la masa en la regla de conteo (la masa solo fija la escala de energía).</p>
+<div class="warn"><b>Límites:</b> (1) La regla N = vueltas ya está publicada para espirales de Arquímedes (Ortix y van den Brink, 2010); aquí se comprueba para otros perfiles pero no es un resultado nuevo de por sí. (2) El modelo vale para un hilo muy delgado (ancho ≪ radio de curvatura) y una sola subbanda transversal; ignora interacciones, impurezas, espín y temperatura real. (3) Las energías son pequeñas: con masa de GaAs y un radio de curvatura de ~10 nm el pozo geométrico es de solo ~1 meV (≈ 16 K); hace falta bajar a radios de unos pocos nm, enfriar y usar un material muy limpio, y a esos radios el hilo debería tener un ancho de ~1 nm o menos para que el modelo valga. (4) No es un dispositivo ni una tecnología: es una hipótesis teórica. (5) <b>Novedades v1.4 (informe v1.7):</b> con paso variable (c) el desfase no cambia (0.417–0.422 en seis espirales); un campo magnético perpendicular y un espín–órbita lineal no cambian N en el modelo; el túnel entre vueltas no cambia N si la amplitud de acoplamiento es ≲ 0.03 unid. (barrera ≳ 5–20 veces la energía de confinamiento); la rugosidad es la limitación más seria (σ<sub>w</sub>/w ≈ 5·10⁻⁵ ya cambia N); y una corrección V<sub>extra</sub> = −g·κ con |g| ≈ 0.1 cambia N en uno (la constante real para el espín–órbita no se calculó). Las dos últimas se pueden probar con los controles de arriba; el túnel entre vueltas ahora tiene un indicador (nota debajo de las tablas). <b>Novedades v1.5 (informe v1.13):</b> (i) la ecuación efectiva de Ortix (2015), leída completa, no contiene una constante libre para la corrección de curvatura de una espiral plana, y con α<sub>N</sub> y α<sub>B</sub> juntos sigue siendo un campo de gauge: el control g es solo una prueba de sensibilidad; (ii) el cálculo 2D completo con vueltas vecinas coincide con el 1D a 0.001 con paso 0.1 y V<sub>0</sub> = 20 E<sub>conf</sub>, y con V<sub>0</sub> ≲ 5 E<sub>conf</sub> y pared igual al ancho las vueltas forman una banda (indicador nuevo); (iii) curvatura oscilante (±50 %) y espiral en S no cambian N en el modelo 1D; (iv) Zeeman con espín–órbita no cambia N para b ≤ 0.05 unid. (hasta ~10 T en GaAs). Queda sin explicar una diferencia de 0.06 unid. entre el 2D y el 1D con curvatura 4.</div></details>
+<details><summary>Ecuaciones</summary>
+<div class="eq">Potencial geométrico (da Costa): &nbsp; V(s) = −(ħ²/8m) κ(s)²</div>
+<div class="eq">En unidades ħ²/2mℓ²: &nbsp; −ψ″(s) − (κ(s)²/4) ψ(s) = E ψ(s)</div>
+<div class="eq">Espiral de Arquímedes: &nbsp; r(θ) = ℓ − pθ/2π , &nbsp; κ = (r² + 2b²)/(r² + b²)^{3/2} , &nbsp; b = p/2π</div>
+<div class="eq">Perfil potencia: &nbsp; κ(s) = κₘ (s/L)ⁿ , &nbsp; κₘ = (n+1)·2πT/L , &nbsp; L = 15 ℓ</div>
+<div class="eq">Regla de conteo (WKB): &nbsp; N ≈ (1/π)∫ (κ/2) ds = θ/2π , &nbsp; θ = ∫κ ds (ángulo total girado)</div>
+<div class="eq">Umbral (comienzo suave κ ∝ sⁿ, Bessel J₋ᵥ, ν = 1/(2(n+1))): &nbsp; (θ/2π)ₘ = m + 3/4 − 1/(4(n+1)) , &nbsp; N = ⌊θ/2π + 1/4 + 1/(4(n+1))⌋</div>
+<div class="eq">Unidad de energía: &nbsp; ħ²/(2m*ℓ²) = 38.1 meV·nm² /[(m*/mₑ) ℓ²]</div>
+<p style="font-size:12px;color:#9aa1ac">Numérica: diferencias finitas con paso 0.01ℓ; autovalores por bisección de Sturm y estados por iteración inversa; tramo recto de entrada de 30ℓ con pared dura al final y pared dura en el extremo interior de la espiral.</p></details>
+<details><summary>Estado de la literatura (verificado en parte)</summary>
+<ul>
+<li>Potencial geométrico de una partícula confinada a una curva: Jensen y Koppe (1971); da Costa (1981).</li>
+<li>Estados ligados en guías curvas: Exner y Šeba (1989); Goldstone y Jaffe (1992): volumen y página confirmados en listas de referencias de otros artículos; los títulos, de memoria.</li>
+<li><b>Ortix y van den Brink (2010):</b> en un gas de electrones enrollado en espiral de Arquímedes, el número de estados ligados es igual al número de vueltas (resumen verificado).</li><li>El número de estados ligados crece con el ángulo de la curva en guías curvas (arXiv:cond-mat/9601004; Bittner et al., arXiv:1303.2958): resúmenes leídos.</li><li>Espirales con curvatura en potencia κ = 1/(σ sᵖ), curvatura decreciente (Anjos et al., arXiv:2406.03590) y control dinámico de guías curvas (Impens et al., arXiv:2003.05845): resúmenes leídos.</li>
+<li>Exner, Harrell y Loss (1999): eigenvalores óptimos de operadores con la curvatura (otro problema; resumen leído). Ortix (2015): reducción de un hilo con espín–órbita a una curva, con correcciones dependientes de κ y τ (resumen leído; volumen de memoria).</li><li>Bergmann, Schwager y Berakdar (2026): estados ligados en hilos con curvatura singular (resumen verificado).</li>
+<li>Lo que no encontré: la fórmula de umbral θ/2π = m + 3/4 − 1/(4(n+1)) para perfiles κ ∝ sⁿ de comienzo suave (deducida aquí con WKB y Bessel; coincide con la numérica a 0.03–0.07), ni el planteo como “contador de curvatura acumulada”. Puede estar en artículos que no vi: es un aporte modesto y la revisión no es exhaustiva.</li></ul></details>
+</div>
+<div class="note"><b>Cómo leerlo.</b> Cada estado ligado es una “vuelta” de curvatura acumulada que el hilo logra guardar. Los estados de menor energía se pegan al centro (donde más se curva); los de mayor energía se reparten por las vueltas exteriores. <br><b>Honestidad:</b> este es un modelo teórico idealizado, sin interacciones ni desorden; no se ha medido nada.</div>
+<div class="sub" style="text-align:center;margin-top:10px">Simulación numérica de una hipótesis teórica · Mathias Zárate Amenero · desarrollado junto con Claude (Anthropic)</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const DS=0.01, LEAD=30;
+let prof='arq';
+// ---------- geometria ----------
+function tmaxArq(p,c){const q=0.88; if(Math.abs(c)<1e-9)return q/p; const D=1+2*c*q/p; return D<0?1e9:(-1+Math.sqrt(D))/c;}
+function pathArqOld(T,p){
+  const b=p/(2*Math.PI), R0=1, th1=2*Math.PI*T;   // th total
+  const xs=[],ys=[],ks=[]; let th=0, i=0;
+  // paso en longitud de arco ~ DS usando punto medio
+  while(th<th1){
+    const r=R0-b*th, sp=Math.sqrt(r*r+b*b);
+    const dth0=DS/sp, rm=R0-b*(th+dth0/2), dth=DS/Math.sqrt(rm*rm+b*b);
+    const rr=R0-b*th;
+    xs.push(rr*Math.cos(th)); ys.push(rr*Math.sin(th));
+    ks.push((rr*rr+2*b*b)/Math.pow(rr*rr+b*b,1.5));
+    th+=dth; i++; if(i>200000)break;
+  }
+  return {xs,ys,ks};
+}
+function pathArq(T,p){
+  const c=+$('C').value, tm=Math.min(T,tmaxArq(p,c)), th1=2*Math.PI*tm;
+  const xs=[],ys=[],ks=[]; let th=0,i=0;
+  while(th<th1){
+    const u=th/(2*Math.PI), r=1-p*(u+c*u*u/2), rp=-(p/(2*Math.PI))*(1+c*u), rpp=-(p/(4*Math.PI*Math.PI))*c, w=Math.sqrt(r*r+rp*rp);
+    xs.push(r*Math.cos(th)); ys.push(r*Math.sin(th)); ks.push((r*r+2*rp*rp-r*rpp)/(w*w*w));
+    th+=DS/w; i++; if(i>200000)break;
+  }
+  return {xs,ys,ks,Tend:th/(2*Math.PI)};
+}
+function pathPow(T,n){
+  const L=15, km=(n+1)*2*Math.PI*T/L, ks=[],xs=[],ys=[]; let x=0,y=0,phi=0;
+  for(let s=0;s<L;s+=DS){const k=km*Math.pow(s/L,n); ks.push(k); xs.push(x); ys.push(y); phi+=k*DS; x+=Math.cos(phi)*DS; y+=Math.sin(phi)*DS;}
+  return {xs,ys,ks};
+}
+function getPath(T,p,pr){return pr==='arq'?pathArq(T,p):pathPow(T,+pr);}
+// ---------- solver tridiagonal ----------
+function buildH(ks,extra){
+  const nl=Math.round(LEAD/DS), N=nl+ks.length, d=new Float64Array(N), e=-1/(DS*DS), c=2/(DS*DS);
+  for(let i=0;i<N;i++){const k=i<nl?0:ks[i-nl]; d[i]=c-k*k/4+(extra&&i>=nl?extra[i-nl]:0);}
+  return {d,e,N,nl};
+}
+// ruido gaussiano correlacionado (semilla fija; mulberry32 + Box-Muller) y potencial extra
+let SEED=12345;
+function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function gauss(r){let u=0,v=0;while(u===0)u=r();v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function noiseArr(n,xi,sig,seed){
+  if(sig<=0)return new Float64Array(n); const r=rng(seed),w=new Float64Array(n); for(let i=0;i<n;i++)w[i]=gauss(r);
+  const s=Math.max(0.5,xi/DS),K=Math.ceil(3*s),ker=[];let ks=0;for(let j=-K;j<=K;j++){const v=Math.exp(-0.5*j*j/(s*s));ker.push(v);ks+=v*v;}
+  const out=new Float64Array(n);let m2=0;
+  for(let i=0;i<n;i++){let a=0;for(let j=-K;j<=K;j++){const q=i+j;if(q>=0&&q<n)a+=ker[j+K]*w[q];}out[i]=a/Math.sqrt(ks);m2+=out[i]*out[i];}
+  const sd=Math.sqrt(m2/n)||1; for(let i=0;i<n;i++)out[i]*=sig/sd; return out;
+}
+function extraV(ks,seed){
+  const sig=+$('sg').value,xi=+$('xi').value,g=+$('gg').value; const nz=noiseArr(ks.length,xi,sig,seed); const ex=new Float64Array(ks.length);
+  for(let i=0;i<ks.length;i++)ex[i]=nz[i]-g*ks[i]; return ex;
+}
+function sturm(d,e,E){ // numero de autovalores < E
+  let cnt=0,q=d[0]-E; if(q<0)cnt++; const e2=e*e;
+  for(let i=1;i<d.length;i++){ if(Math.abs(q)<1e-300)q=1e-300; q=d[i]-E-e2/q; if(q<0)cnt++; }
+  return cnt;
+}
+function eigval(d,e,k,lo,hi){ // k-esimo (0-index)
+  for(let it=0;it<60;it++){const m=(lo+hi)/2; if(sturm(d,e,m)>k)hi=m; else lo=m;}
+  return (lo+hi)/2;
+}
+function invIter(d,e,lam,N){
+  const a=new Float64Array(N),b=new Float64Array(N),c=new Float64Array(N); const sh=lam-1e-7*(1+Math.abs(lam));
+  let v=new Float64Array(N); for(let i=0;i<N;i++)v[i]=1+0.3*Math.sin(i*0.37);
+  for(let it=0;it<4;it++){
+    // resolver (T - sh I) w = v  (Thomas)
+    const cp=new Float64Array(N), dp=new Float64Array(N); let den=d[0]-sh; if(Math.abs(den)<1e-14)den=1e-14; cp[0]=e/den; dp[0]=v[0]/den;
+    for(let i=1;i<N;i++){den=d[i]-sh-e*cp[i-1]; if(Math.abs(den)<1e-14)den=1e-14; cp[i]=e/den; dp[i]=(v[i]-e*dp[i-1])/den;}
+    const w=new Float64Array(N); w[N-1]=dp[N-1]; for(let i=N-2;i>=0;i--)w[i]=dp[i]-cp[i]*w[i+1];
+    let nr=0; for(let i=0;i<N;i++)nr+=w[i]*w[i]; nr=Math.sqrt(nr); for(let i=0;i<N;i++)v[i]=w[i]/nr;
+  }
+  return v;
+}
+// ---------- estado global ----------
+let G=null;
+function compute(){
+  const T=+$('T').value,p=+$('P').value;
+  const path=getPath(T,p,prof); let Teff=prof==='arq'?path.Tend:T; const ex=extraV(path.ks,SEED); const H=buildH(path.ks,ex); const H0=buildH(path.ks); const N0=sturm(H0.d,H0.e,0);
+  const theta=path.ks.reduce((a,k)=>a+k,0)*DS; const N=sturm(H.d,H.e,0);
+  const ev=[],vec=[]; const kmax=Math.max(...path.ks);
+  for(let k=0;k<Math.min(N,14);k++){ev.push(eigval(H.d,H.e,k,-kmax*kmax/4-1,0)); }
+  G={path,H,theta,N,ev,Teff,N0,vec:{},ex};
+  return G;
+}
+function stateVec(k){ if(!G.vec[k]) G.vec[k]=invIter(G.H.d,G.H.e,G.ev[k],G.H.N); return G.vec[k]; }
+// barrido N vs theta/2pi
+function sweep(){
+  const pts=[],p=+$('P').value; const Tmax=prof==='arq'?Math.min(9,tmaxArq(p,+$('C').value)):9;
+  for(let T=0.25;T<=Tmax+1e-9;T+=0.5){const pa=getPath(T,p,prof);const H=buildH(pa.ks);const th=pa.ks.reduce((a,k)=>a+k,0)*DS;pts.push([th/(2*Math.PI),sturm(H.d,H.e,0)]);}
+  return pts;
+}
+// ---------- dibujo ----------
+function drawSpiral(){
+  const cv=$('cs'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height; x.clearRect(0,0,W,Hh);
+  const P=G.path, nl=G.H.nl; const k=+$('kst').value;
+  let dens=null; if(G.N>0){const v=stateVec(k); dens=new Float64Array(P.xs.length); let mx=0; for(let i=0;i<P.xs.length;i++){dens[i]=v[nl+i]*v[nl+i]; if(dens[i]>mx)mx=dens[i];} for(let i=0;i<dens.length;i++)dens[i]/=mx;}
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for(let i=0;i<P.xs.length;i++){x0=Math.min(x0,P.xs[i]);x1=Math.max(x1,P.xs[i]);y0=Math.min(y0,P.ys[i]);y1=Math.max(y1,P.ys[i]);}
+  const pad=26, sc=Math.min((W-2*pad)/(x1-x0||1),(Hh-2*pad)/(y1-y0||1)); const cx=W/2-(x0+x1)/2*sc, cy=Hh/2+(y0+y1)/2*sc;
+  const X=i=>cx+P.xs[i]*sc, Y=i=>cy-P.ys[i]*sc;
+  x.lineCap='round'; x.lineWidth=1; x.strokeStyle='#262b35'; x.beginPath(); x.moveTo(X(0),Y(0)); for(let i=1;i<P.xs.length;i+=3)x.lineTo(X(i),Y(i)); x.stroke();
+  x.lineWidth=4.5; const step=Math.max(1,Math.floor(P.xs.length/1500));
+  for(let i=0;i+step<P.xs.length;i+=step){ const t=dens?Math.pow(dens[i],0.6):0; const r=Math.round(30+t*(94-30)),g=Math.round(60+t*(200-60)),b=Math.round(90+t*(216-90)); x.strokeStyle=`rgb(${r},${g},${b})`; x.beginPath(); x.moveTo(X(i),Y(i)); x.lineTo(X(i+step),Y(i+step)); x.stroke(); }
+  // tramo recto de entrada (decorativo)
+  const dx=P.xs[1]-P.xs[0],dy=P.ys[1]-P.ys[0],dn=Math.hypot(dx,dy)||1; x.strokeStyle='#33404f'; x.lineWidth=3; x.beginPath(); x.moveTo(X(0)-dx/dn*0.8*sc,Y(0)+dy/dn*0.8*sc); x.lineTo(X(0),Y(0)); x.stroke();
+  x.fillStyle='#9aa1ac'; x.font='12px sans-serif'; x.fillText('entrada',X(0)-dx/dn*0.8*sc-4,Y(0)+dy/dn*0.8*sc-8); x.fillText('extremo interior',X(P.xs.length-1)+8,Y(P.xs.length-1)+4);
+}
+function drawV(){
+  const cv=$('cv'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height,pl=48,pr=12,pt=10,pb=26; x.clearRect(0,0,W,Hh);
+  const ks=G.path.ks,n=ks.length; const kmax=Math.max(...ks), Vmin=-kmax*kmax/4; const sL=-3, sR=n*DS;
+  const X=s=>pl+(s-sL)/(sR-sL)*(W-pl-pr), Y=v=>pt+(0-v)/(0-Vmin*1.05)*(Hh-pt-pb);
+  x.strokeStyle='#262b35'; x.beginPath(); x.moveTo(pl,pt); x.lineTo(pl,Hh-pb); x.lineTo(W-pr,Hh-pb); x.stroke();
+  x.strokeStyle='#e8985e'; x.lineWidth=2; x.beginPath(); x.moveTo(X(sL),Y(0)); x.lineTo(X(0),Y(0)); for(let i=0;i<n;i+=4){const s=i*DS; x.lineTo(X(s),Y(-ks[i]*ks[i]/4));} x.stroke();
+  const sel=+$('kst').value; G.ev.forEach((E,i)=>{x.strokeStyle=i===sel?'#ffffff':'#5ec8d8'; x.lineWidth=i===sel?2:1; x.globalAlpha=i===sel?1:0.7; x.beginPath(); x.moveTo(pl,Y(E)); x.lineTo(W-pr,Y(E)); x.stroke();}); x.globalAlpha=1;
+  x.fillStyle='#9aa1ac'; x.font='11.5px sans-serif'; x.fillText('V (ħ²/2mℓ²)',pl+6,pt+24); x.fillText('0',pl-14,Y(0)+4); x.fillText(Vmin.toFixed(1),2,Hh-pb-2); x.fillText('longitud recorrida s (ℓ)',W/2-50,Hh-6);
+}
+function drawN(){
+  const pts=sweep(), cv=$('cn'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height,pl=46,pr=14,pt=12,pb=30; x.clearRect(0,0,W,Hh);
+  const mx=Math.max(10,...pts.map(p=>Math.max(p[0],p[1])),G.theta/2/Math.PI)+0.5; const X=v=>pl+v/mx*(W-pl-pr), Y=v=>Hh-pb-v/mx*(Hh-pb-pt);
+  x.strokeStyle='#262b35'; x.beginPath(); x.moveTo(pl,pt); x.lineTo(pl,Hh-pb); x.lineTo(W-pr,Hh-pb); x.stroke();
+  x.fillStyle='rgba(154,161,172,.14)'; x.beginPath(); x.moveTo(X(0),Y(-0.5)); x.lineTo(X(mx),Y(mx-0.5)); x.lineTo(X(mx),Y(mx+0.5)); x.lineTo(X(0),Y(0.5)); x.fill();
+  x.strokeStyle='#9aa1ac'; x.setLineDash([4,4]); x.beginPath(); x.moveTo(X(0),Y(0)); x.lineTo(X(mx),Y(mx)); x.stroke(); x.setLineDash([]);
+  x.fillStyle='#2a78d6'; pts.forEach(p=>{x.beginPath(); x.arc(X(p[0]),Y(p[1]),4,0,7); x.fill();});
+  x.fillStyle='#eb6834'; x.beginPath(); x.arc(X(G.theta/2/Math.PI),Y(G.N),6.5,0,7); x.fill();
+  x.fillStyle='#9aa1ac'; x.font='11.5px sans-serif'; x.fillText('N',8,14); x.fillText('θ/2π = (1/2π)∫κ ds',W/2-50,Hh-8);
+}
+const KT=0.08617;
+function table(){
+  const ell=+$('ell').value, ms=+$('ms').value, Tk=+$('Tk').value; const Eu=38.1/(ms*ell*ell); // meV
+  const kmax=Math.max(...G.path.ks); const E0=G.ev.length?G.ev[0]:null; const rows=[];
+  rows.push(['Estados ligados N (numérico, con los efectos añadidos)',G.N+(G.N!==G.N0?'   (sin efectos: '+G.N0+')':'')]);
+  rows.push(['Curvatura acumulada θ/2π',(G.theta/2/Math.PI).toFixed(2)]);
+  rows.push(['N − θ/2π',(G.N-G.theta/2/Math.PI).toFixed(2)]);
+  const tt=G.theta/2/Math.PI;
+  if(prof==='arq'){ const pp=+$('P').value, dl=Math.atan(2/LEAD+pp/(2*Math.PI))/Math.PI; const Np=Math.floor(tt+0.5-dl); const nextTh=Np+0.5+dl;
+    rows.push(['N predicho (Bessel + empalme con el tramo de entrada): ⌊θ/2π + 1/2 − δ⌋, δ = (1/π)·arctan(2/L + p/2π)',Np+'   (δ = '+dl.toFixed(3)+'; '+(Np===G.N?'coincide':'difiere')+' con el numérico)'+((1-pp*(tt+(+$('C').value)*tt*tt/2))<6*pp/(2*Math.PI)?' — aviso: la espiral llega casi al centro (r final < 6 veces el paso/2π) y la fórmula deja de valer':'')]);
+    rows.push(['Umbral del siguiente estado, θ/2π = m + 1/2 + δ',nextTh.toFixed(3)]); }
+  else{ const nn=+prof, off=0.25+1/(4*(nn+1)); const Np=Math.floor(tt+off); const nextTh=Np+0.75-1/(4*(nn+1));
+    rows.push(['N predicho por WKB: ⌊θ/2π + 1/4 + 1/(4(n+1))⌋',Np+'   ('+(Np===G.N?'coincide':'difiere')+' con el numérico)']);
+    rows.push(['Umbral del siguiente estado, θ/2π = m + 3/4 − 1/(4(n+1))',nextTh.toFixed(3)]); }
+  rows.push(['κ máxima (1/ℓ)  =  1/R mín',kmax.toFixed(2)+'   (R mín = '+(ell/kmax).toFixed(1)+' nm)']);
+  rows.push(['Pozo máximo −κ²/4 (unidades)',(-kmax*kmax/4).toFixed(2)]);
+  rows.push(['Ancho del hilo para que el modelo valga (≲ R mín/5)','≲ '+(ell/kmax/5).toFixed(2)+' nm']);
+  rows.push(['Energías E₀, E₁, E₂ (unidades)',G.ev.slice(0,3).map(e=>e.toFixed(2)).join(' ; ')||'—']);
+  rows.push(['Unidad de energía ħ²/2m*ℓ²',Eu.toFixed(3)+' meV']);
+  rows.push(['Ligadura del fundamental |E₀|',E0==null?'—':(-E0*Eu).toFixed(3)+' meV']);
+  rows.push(['Energía térmica k_BT',(KT*Tk).toFixed(3)+' meV  ('+Tk+' K)']);
+  $('tcal').innerHTML=rows.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
+  const r=E0==null?null:(-E0*Eu)/(KT*Tk);
+  $('pnote').innerHTML=r==null?'<b>Sin estados ligados:</b> aumenta la curvatura acumulada.':(r>=3?`<b>Observable en principio:</b> la ligadura del fundamental (${(-E0*Eu).toFixed(2)} meV) es ${r.toFixed(1)} veces la energía térmica. Aun así faltaría un hilo muy limpio y delgado.`:`<b>Borrado por la temperatura:</b> la ligadura del fundamental (${(-E0*Eu).toFixed(2)} meV) es solo ${r.toFixed(2)} veces k<sub>B</sub>T. Habría que enfriar, o hacer la espiral más pequeña o con material de masa efectiva menor.`);
+  if(prof==='arq' && +$('T').value>G.Teff+1e-9) $('pnote').innerHTML+=' <b>Nota:</b> con este paso el radio llegaría a casi cero; se limitó a T = '+G.Teff.toFixed(2)+' vueltas.';
+  if(+$('sg').value>0||Math.abs(+$('gg').value)>0){const w=ell/kmax/5, Ec=Math.PI*Math.PI/Math.pow(w/ell,2); $('pnote').innerHTML+=' <b>Equivalencia de la rugosidad:</b> con un ancho w = R mín/5 = '+(w).toFixed(2)+' nm, σ<sub>V</sub> = '+(+$('sg').value).toFixed(2)+' unid. corresponde a σ<sub>w</sub>/w ≈ '+(+$('sg').value/(2*Ec)).toExponential(1)+' (E<sub>conf</sub> = π²/w² = '+Ec.toExponential(1)+' unid.).';}
+  {const wl=1/(5*kmax); const dEu=bandDelta(+$('wf').value,+$('tw').value)/(wl*wl); const bind=E0==null?0:-E0;
+   const hib=E0!=null&&Math.abs(dEu)>0.5*bind;
+   $('pnote').innerHTML+=' <b>Túnel entre vueltas (2D completo, informe 5.10):</b> con pared de '+(+$('tw').value).toFixed(1)+' veces el ancho y V<sub>0</sub> = '+(+$('wf').value).toFixed(1)+' E<sub>conf</sub>, el fondo de la banda de vueltas acopladas queda '+Math.abs(dEu).toExponential(1)+' unid. por debajo del umbral de un canal aislado'+(E0==null?'.':(hib?'; eso es comparable o mayor que la ligadura del fundamental ('+bind.toFixed(2)+' unid.): <b>las vueltas se hibridan y el conteo N no se aplica</b>.':'; es pequeño frente a la ligadura del fundamental ('+bind.toFixed(2)+' unid.): el conteo N se mantiene.'))+' (Fondo de banda de una red periódica de pozos de ancho w = R mín/5; el 2D con la espiral real, 3–4 vueltas, confirmó este criterio.)';}
+}
+function bandDelta(f,tw){
+  const V0=f*Math.PI*Math.PI; const kap=q=>Math.sqrt(Math.max(V0-q*q,0));
+  const solve=(F)=>{let a=1e-6,b=Math.min(Math.PI-1e-6,Math.sqrt(V0)-1e-6);for(let i=0;i<200;i++){const m=0.5*(a+b);(F(a)*F(m)<=0)?b=m:a=m;}return 0.5*(a+b);};
+  const qs=solve(q=>q*Math.tan(q/2)-kap(q));
+  const qb=solve(q=>q*Math.tan(q/2)-kap(q)*Math.tanh(kap(q)*tw/2));
+  return qb*qb-qs*qs;
+}
+function refresh(){
+  compute(); const kst=$('kst'); kst.max=Math.max(0,G.N-1); if(+kst.value>+kst.max)kst.value=kst.max;
+  $('Nv').textContent=G.N; $('kv').textContent=(+kst.value+1);
+  $('head').innerHTML=`N = <b>${G.N}</b> estados ligados &nbsp;·&nbsp; θ/2π = <b>${(G.theta/2/Math.PI).toFixed(2)}</b> &nbsp;·&nbsp; E₀ = <b>${G.ev.length?G.ev[0].toFixed(2):'—'}</b> (unid. ħ²/2mℓ²)`;
+  $('Tv').textContent=(+$('T').value).toFixed(2); $('pv').textContent=(+$('P').value).toFixed(2); $('lv').textContent=$('ell').value; $('mv').textContent=(+$('ms').value).toFixed(3); $('Kv').textContent=$('Tk').value;
+  $('pbox').style.display=prof==='arq'?'':'none'; $('cbox').style.display=prof==='arq'?'':'none'; $('cv2').textContent=(+$('C').value).toFixed(2); $('sgv').textContent=(+$('sg').value).toFixed(2); $('xiv').textContent=(+$('xi').value).toFixed(2); $('gv').textContent=(+$('gg').value).toFixed(2); $('wfv').textContent=(+$('wf').value).toFixed(1); $('twv').textContent=(+$('tw').value).toFixed(1);
+  mc();
+  drawSpiral(); drawV(); drawN(); table(); if(typeof D!=='undefined'&&D.ks!==undefined)dynSetup();
+}
+['T','P','C','sg','xi','gg','wf','tw','ell','ms','Tk'].forEach(id=>$(id).oninput=refresh);
+$('newseed').onclick=()=>{SEED=Math.floor(Math.random()*1e9);refresh();};
+function mc(){ // 60 realizaciones del ruido: fracción con N distinto del ideal
+  const sg=+$('sg').value; if(sg<=0){$('mcres').textContent=''; return;}
+  let ch=0,sum=0,M=60; for(let m=0;m<M;m++){const ex=extraV(G.path.ks,1000+m*7919); const H=buildH(G.path.ks,ex); const n=sturm(H.d,H.e,0); sum+=n; if(n!==G.N0)ch++;}
+  $('mcres').innerHTML='En '+M+' realizaciones del ruido: N ≠ '+G.N0+' en <b>'+Math.round(100*ch/M)+' %</b>; N medio = '+(sum/M).toFixed(2)+'.';
+}
+$('kst').oninput=()=>{$('kv').textContent=(+$('kst').value+1);drawSpiral();drawV();};
+document.querySelectorAll('button[data-prof]').forEach(b=>b.onclick=()=>{prof=b.dataset.prof; document.querySelectorAll('button[data-prof]').forEach(o=>o.classList.toggle('on',o===b)); refresh();});
+document.querySelectorAll('button[data-pre]').forEach(b=>b.onclick=()=>{const [m,l,t]=b.dataset.pre.split(','); $('ms').value=m;$('ell').value=l;$('Tk').value=t; refresh();});
+
+// ---------- dinámica: rampa de curvatura (Crank–Nicolson) ----------
+const D={run:false,step:0,steps:1,dt:0.01,tau:1,lf:1.5,re:null,im:null,ks:null,ds:2*DS,nl:0,N:0,hist:[],raf:0,spf:1,box:null,sx:0,sy:0,sphi:0,kmax:1,ok:false};
+function dynH(lam){const N=D.N,d=new Float64Array(N),e=-1/(D.ds*D.ds),c=2/(D.ds*D.ds);for(let i=0;i<N;i++)d[i]=c-lam*lam*D.ks[i]*D.ks[i]/4;return {d,e};}
+function dynShape(lam){const n=D.N-D.nl,xs=new Float64Array(n),ys=new Float64Array(n);let x=D.sx,y=D.sy,phi=D.sphi;for(let i=0;i<n;i++){xs[i]=x;ys[i]=y;phi+=lam*D.ks[D.nl+i]*D.ds;x+=Math.cos(phi)*D.ds;y+=Math.sin(phi)*D.ds;}return {xs,ys};}
+function dynSetup(){
+  D.run=false; cancelAnimationFrame(D.raf); $('dplay').textContent='▶ Reproducir';
+  D.tau=Math.pow(10,+$('tau').value); D.lf=+$('lf').value;
+  $('tauv').textContent=D.tau.toFixed(2); $('lfv').textContent=D.lf.toFixed(2);
+  const ell=+$('ell').value, ms=+$('ms').value; const tuPs=0.12*(ms/0.067)*Math.pow(ell/10,2);
+  $('taups').textContent='(≈ '+(D.tau*tuPs).toFixed(2)+' ps con estos valores de m* y ℓ)';
+  D.ok=G.N>0; D.hist=[]; D.step=0;
+  if(!D.ok){$('dres').innerHTML='<b>Sin estados ligados:</b> aumenta la curvatura acumulada para poder animar.'; const x=$('cd').getContext('2d'); x.clearRect(0,0,860,400); $('cpop').getContext('2d').clearRect(0,0,860,190); return;}
+  const P=G.path, ks=[]; for(let i=0;i<P.ks.length;i+=2)ks.push(P.ks[i]);
+  D.nl=Math.round(LEAD/D.ds); D.N=D.nl+ks.length; D.ks=new Float64Array(D.N); for(let i=0;i<ks.length;i++)D.ks[D.nl+i]=ks[i];
+  D.sx=P.xs[0]; D.sy=P.ys[0]; D.sphi=Math.atan2(P.ys[1]-P.ys[0],P.xs[1]-P.xs[0]); D.kmax=Math.max(...ks);
+  const H=dynH(1); const E0=eigval(H.d,H.e,0,-D.kmax*D.kmax/4-1,2); const v=invIter(H.d,H.e,E0,D.N);
+  D.re=Float64Array.from(v); D.im=new Float64Array(D.N);
+  D.steps=Math.max(40,Math.min(1500,Math.ceil(D.tau/0.005))); D.dt=D.tau/D.steps; D.spf=Math.max(1,Math.ceil(D.steps/330));
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for(const lam of [1,D.lf,(1+D.lf)/2]){const S=dynShape(lam);for(let i=0;i<S.xs.length;i++){x0=Math.min(x0,S.xs[i]);x1=Math.max(x1,S.xs[i]);y0=Math.min(y0,S.ys[i]);y1=Math.max(y1,S.ys[i]);}}
+  D.box=[x0,x1,y0,y1];
+  const E1=G.ev.length>1?G.ev[1]-G.ev[0]:null;
+  D.gap=E1; dynRecord(); dynDraw(); $('dres').innerHTML=E1?`Brecha inicial E₁ − E₀ = ${E1.toFixed(2)} (unidades). Regla adiabática: τ ≳ ħ/(E₁−E₀) = ${(1/E1).toFixed(2)}. Con tu τ = ${D.tau.toFixed(2)}, τ·(E₁−E₀) = ${(D.tau*E1).toFixed(1)}.`:'';
+}
+function dynStep(){
+  const N=D.N,dt=D.dt,t=(D.step+0.5)*dt,lam=1+(D.lf-1)*t/D.tau; const H=dynH(lam),d=H.d,e=H.e,h=dt/2,re=D.re,im=D.im;
+  const rr=new Float64Array(N),ri=new Float64Array(N);
+  for(let i=0;i<N;i++){let hr=d[i]*re[i],hi=d[i]*im[i]; if(i>0){hr+=e*re[i-1];hi+=e*im[i-1];} if(i<N-1){hr+=e*re[i+1];hi+=e*im[i+1];} rr[i]=re[i]+h*hi; ri[i]=im[i]-h*hr;}
+  const cpr=new Float64Array(N),cpi=new Float64Array(N),dpr=new Float64Array(N),dpi=new Float64Array(N); const bi=h*e;
+  let dr=1,di=h*d[0],m=dr*dr+di*di;
+  cpr[0]=(bi*di)/m; cpi[0]=(bi*dr)/m; dpr[0]=(rr[0]*dr+ri[0]*di)/m; dpi[0]=(ri[0]*dr-rr[0]*di)/m;
+  for(let i=1;i<N;i++){
+    const tr=-bi*cpi[i-1], ti=bi*cpr[i-1]; dr=1-tr; di=h*d[i]-ti; m=dr*dr+di*di;
+    cpr[i]=(bi*di)/m; cpi[i]=(bi*dr)/m;
+    const ur=-bi*dpi[i-1], ui=bi*dpr[i-1]; const nr=rr[i]-ur, ni=ri[i]-ui;
+    dpr[i]=(nr*dr+ni*di)/m; dpi[i]=(ni*dr-nr*di)/m;
+  }
+  re[N-1]=dpr[N-1]; im[N-1]=dpi[N-1];
+  for(let i=N-2;i>=0;i--){const pr=cpr[i]*re[i+1]-cpi[i]*im[i+1], pi=cpr[i]*im[i+1]+cpi[i]*re[i+1]; re[i]=dpr[i]-pr; im[i]=dpi[i]-pi;}
+  D.step++;
+}
+function dynLam(){return 1+(D.lf-1)*(D.step/D.steps);}
+function dynPops(lam){
+  const H=dynH(lam),km=D.kmax*lam,out=[];
+  for(let k=0;k<3;k++){const E=eigval(H.d,H.e,k,-km*km/4-1,2),v=invIter(H.d,H.e,E,D.N);let sr=0,si=0;for(let i=0;i<D.N;i++){sr+=v[i]*D.re[i];si+=v[i]*D.im[i];}out.push(sr*sr+si*si);}
+  return out;
+}
+function dynRecord(){const p=dynPops(dynLam());D.hist.push([D.step/D.steps,p[0],p[1],p[2]]);return p;}
+function dynDraw(){
+  const cv=$('cd'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height; x.clearRect(0,0,W,Hh);
+  const lam=dynLam(),S=dynShape(lam),n=S.xs.length,[x0,x1,y0,y1]=D.box,pad=26,sc=Math.min((W-2*pad)/(x1-x0||1),(Hh-2*pad)/(y1-y0||1)),cx=W/2-(x0+x1)/2*sc,cy=Hh/2+(y0+y1)/2*sc;
+  const X=i=>cx+S.xs[i]*sc,Y=i=>cy-S.ys[i]*sc;
+  const dens=new Float64Array(n);let mx=0;for(let i=0;i<n;i++){const a=D.re[D.nl+i],b=D.im[D.nl+i];dens[i]=a*a+b*b;if(dens[i]>mx)mx=dens[i];}
+  x.lineCap='round';x.lineWidth=1;x.strokeStyle='#262b35';x.beginPath();x.moveTo(X(0),Y(0));for(let i=1;i<n;i+=3)x.lineTo(X(i),Y(i));x.stroke();
+  x.lineWidth=4.5;const step=Math.max(1,Math.floor(n/900));
+  for(let i=0;i+step<n;i+=step){const t=mx>0?Math.pow(dens[i]/mx,0.6):0,r=Math.round(30+t*64),g=Math.round(60+t*140),b=Math.round(90+t*126);x.strokeStyle=`rgb(${r},${g},${b})`;x.beginPath();x.moveTo(X(i),Y(i));x.lineTo(X(i+step),Y(i+step));x.stroke();}
+  x.fillStyle='#9aa1ac';x.font='12.5px sans-serif';x.fillText('λ = '+lam.toFixed(2)+'   ·   t/τ = '+(D.step/D.steps).toFixed(2),12,20);
+  // poblaciones
+  const c2=$('cpop'),y=c2.getContext('2d'),w=c2.width,h=c2.height;y.clearRect(0,0,w,h);const L=46,R=12,Tp=12,B=26;
+  y.strokeStyle='#262b35';y.lineWidth=1;y.fillStyle='#9aa1ac';y.font='11px sans-serif';
+  for(let g=0;g<=4;g++){const yy=Tp+(h-Tp-B)*(1-g/4);y.beginPath();y.moveTo(L,yy);y.lineTo(w-R,yy);y.stroke();y.fillText((g/4).toFixed(2),8,yy+4);}
+  y.fillText('t / τ',w/2-12,h-6);
+  const col=['#2a78d6','#eb6834','#9aa1ac'],lab=['fundamental','1.er excitado','2.º excitado'];
+  for(let k=0;k<3;k++){y.strokeStyle=col[k];y.lineWidth=2;y.beginPath();D.hist.forEach((p,i)=>{const xx=L+(w-L-R)*p[0],yy=Tp+(h-Tp-B)*(1-Math.min(1,p[k+1]));if(i)y.lineTo(xx,yy);else y.moveTo(xx,yy);});y.stroke();y.fillStyle=col[k];y.fillText('— '+lab[k],w-R-120,Tp+(h-Tp-B)*0.4+k*15);}
+}
+function dynFinish(){
+  const p=D.hist[D.hist.length-1];const E1=D.gap;
+  const verdict=p[1]>0.95?'la partícula siguió al estado fundamental (cambio adiabático)':p[1]>0.5?'parte de la probabilidad quedó atrás en estados excitados (cambio intermedio)':'la mayor parte de la probabilidad quedó atrás (cambio brusco)';
+  $('dres').innerHTML=`Al terminar: P₀ = <b>${p[1].toFixed(3)}</b>, P₁ = ${p[2].toFixed(3)}, P₂ = ${p[3].toFixed(3)}: ${verdict}. `+(E1?`Brecha inicial E₁ − E₀ = ${E1.toFixed(2)}; τ·(E₁ − E₀) = ${(D.tau*E1).toFixed(1)}.`:'');
+}
+function dynFrame(){
+  if(!D.run)return;
+  for(let j=0;j<D.spf&&D.step<D.steps;j++)dynStep();
+  dynRecord();dynDraw();
+  if(D.step>=D.steps){D.run=false;$('dplay').textContent='▶ Repetir';dynFinish();return;}
+  D.raf=requestAnimationFrame(dynFrame);
+}
+function dynPlay(){if(!D.ok)return;if(D.step>=D.steps)dynSetup();D.run=true;$('dplay').textContent='⏸ Pausa';D.raf=requestAnimationFrame(dynFrame);}
+function dynSkip(){if(!D.ok)return;D.run=false;cancelAnimationFrame(D.raf);const every=Math.max(1,Math.ceil(D.steps/120));while(D.step<D.steps){for(let j=0;j<every&&D.step<D.steps;j++)dynStep();dynRecord();}dynDraw();$('dplay').textContent='▶ Repetir';dynFinish();}
+$('dplay').onclick=()=>{if(D.run){D.run=false;cancelAnimationFrame(D.raf);$('dplay').textContent='▶ Seguir';}else dynPlay();};
+$('dskip').onclick=dynSkip;
+$('tau').oninput=dynSetup;$('lf').oninput=dynSetup;
+document.querySelectorAll('button[data-tau]').forEach(b=>b.onclick=()=>{$('tau').value=b.dataset.tau;dynSetup();});
+
+refresh();
+window.__sim={get G(){return G;},setProf:p=>{prof=p;refresh();},refresh,get D(){return D;},dynSetup,dynSkip};
+</script></body></html>
